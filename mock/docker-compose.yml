@@ -1,0 +1,20 @@
+services:
+  mock-backend:
+    image: python:3.11-slim
+    container_name: algodatta-mock-backend
+    working_dir: /app
+    command: bash -c "mkdir -p api && echo '{\"status\":\"ok\"}' > api/healthz && python3 -m http.server 8000"
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+
+  mock-frontend:
+    image: node:18-alpine
+    container_name: algodatta-mock-frontend
+    working_dir: /app
+    command: sh -c 'npx http-server -p 3000 .'
+    volumes:
+      - .:/app
+    ports:
+      - "3000:3000"

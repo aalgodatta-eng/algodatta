@@ -1,0 +1,80 @@
+'use client';
+import Image from "next/image";
+import { useEffect, useState } from "react";
+
+export default function Dashboard() {
+  const [username, setUsername] = useState("User");
+  useEffect(() => { setUsername("admin1"); }, []);
+
+  return (
+    <div style={{ fontFamily: "Arial, sans-serif", backgroundColor: "#f9f9f9", minHeight: "100vh" }}>
+      {/* Navbar */}
+      <header style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: "16px 40px", backgroundColor: "#0c3c60", color: "white"
+      }}>
+        <div style={{ flex: 1 }} />
+        <div style={{ textAlign: "center" }}>
+          <Image src="/logo.png" alt="AlgoDatta" width={50} height={50} />
+          <h2 style={{ margin: 0 }}>AlgoDatta</h2>
+        </div>
+        <div style={{ flex: 1, textAlign: "right" }}>
+          <button style={{
+            backgroundColor: "white", color: "#0c3c60", fontWeight: "bold",
+            border: "none", borderRadius: "6px", padding: "8px 16px", cursor: "pointer"
+          }}>Logout</button>
+        </div>
+      </header>
+
+      {/* Tabs */}
+      <nav style={{
+        display: "flex", justifyContent: "center", background: "#fff",
+        padding: "12px", boxShadow: "0 2px 6px rgba(0,0,0,0.1)"
+      }}>
+        {["Dashboard", "Strategies", "Executions", "Reports"].map((tab, i) => (
+          <span key={i} style={{
+            margin: "0 16px", fontWeight: tab === "Strategies" ? "bold" : "normal",
+            color: tab === "Strategies" ? "#0c3c60" : "#555",
+            borderBottom: tab === "Strategies" ? "2px solid #0c3c60" : "none",
+            cursor: "pointer"
+          }}>
+            {tab}
+          </span>
+        ))}
+      </nav>
+
+      {/* Main content */}
+      <main style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center", padding: "40px 60px"
+      }}>
+        <div style={{ flex: 1 }}>
+          <h3 style={{ marginBottom: "20px" }}>Welcome {username}</h3>
+          <div style={{
+            width: "100%", height: "250px", background: "#eef5fb",
+            borderRadius: "8px", display: "flex", alignItems: "center",
+            justifyContent: "center", color: "#888"
+          }}>
+            Chart Placeholder
+          </div>
+        </div>
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <Image src="/logo.png" alt="AlgoDatta" width={250} height={250} />
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer style={{
+        backgroundColor: "#0c3c60", color: "white", textAlign: "center",
+        padding: "20px", marginTop: "40px"
+      }}>
+        <p>
+          <a href="#" style={{ color: "white", margin: "0 12px" }}>About Us</a>|
+          <a href="#" style={{ color: "white", margin: "0 12px" }}>Contact</a>
+        </p>
+        <p style={{ fontSize: "12px", marginTop: "8px" }}>
+          © {new Date().getFullYear()} AlgoDatta. All rights reserved.
+        </p>
+      </footer>
+    </div>
+  );
+}
