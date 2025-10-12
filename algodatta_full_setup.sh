@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================
 #  AlgoDatta Full Bootstrap Script (Setup + Deploy + Verify)
-#  Version: v8.0 | Ubuntu 20.04/22.04 (Amazon Lightsail)
+#  Version: v9.0 | Ubuntu 20.04 / 22.04 (Amazon Lightsail)
 # =============================================================
 set -Eeuo pipefail
 
@@ -17,7 +17,7 @@ fi
 
 echo "[$(date '+%F %T')] 🚀 Starting AlgoDatta full setup..."
 
-# --- 1️⃣ System update ----------------------------------------------------
+# --- 1️⃣ Update system ----------------------------------------------------
 sudo apt-get update -y && sudo apt-get upgrade -y
 
 # --- 2️⃣ Core utilities ---------------------------------------------------
@@ -80,30 +80,31 @@ fi
 # --- 9️⃣ Nginx bootstrap --------------------------------------------------
 sudo systemctl enable nginx && sudo systemctl start nginx
 
-# --- 🔟 Dry-Run (mock) ----------------------------------------------------
+# --- 🔟 DRY-RUN (Mock Containers) ----------------------------------------
 if [ "$DRY_RUN" = true ]; then
   echo "============================================================="
   echo "🧪 DRY-RUN MODE — launching mock frontend/backend containers..."
   echo "============================================================="
   unzip -o *.zip -d "$APP_DIR/mock" >/dev/null 2>&1 || true
 
+  # Clean and create fixed mock docker-compose.yml
   cat > "$APP_DIR/mock/docker-compose.yml" <<'YML'
-version: '3.8'
 services:
   mock-backend:
     image: python:3.11-slim
     container_name: algodatta-mock-backend
-    command: bash -c "python3 -m http.server 8000"
     working_dir: /app
+    command: bash -c "mkdir -p api && echo '{\"status\":\"ok\"}' > api/healthz && python3 -m http.server 8000"
     volumes:
       - .:/app
     ports:
       - "8000:8000"
+
   mock-frontend:
     image: node:18-alpine
     container_name: algodatta-mock-frontend
     working_dir: /app
-    command: sh -c "npx http-server -p 3000 ."
+    command: sh -c 'npx http-server -p 3000 .'
     volumes:
       - .:/app
     ports:
@@ -111,6 +112,7 @@ services:
 YML
 
   cd "$APP_DIR/mock"
+  sudo docker-compose down >/dev/null 2>&1 || true
   sudo docker-compose up -d
   sleep 5
   IP=$(curl -s ifconfig.me || echo "localhost")
@@ -124,7 +126,7 @@ else
   echo "🚀 Running full AlgoDatta build script (prod mode)..."
   echo "============================================================="
 
-  # --- Fix seed-user section (aalgodatta@gmail.com variant) --------------
+  # --- Patch seed users in build script ----------------------------------
   sed -i '/# --- 7️⃣ Seed Demo Users/,/# --- 8️⃣ Terraform/{
     /# --- 7️⃣ Seed Demo Users/!d
     a echo "[$(date +%F_%T)] 👥 Creating demo users (admin, analyst, trader)..."
@@ -191,7 +193,7 @@ VERIFY
 chmod +x "$APP_DIR/verify_algodatta_stack.sh"
 sudo bash "$APP_DIR/verify_algodatta_stack.sh" || true
 
-# --- 12️⃣ Optional shutdown ----------------------------------------------
+# --- 12️⃣ Optional Auto-Shutdown -----------------------------------------
 if [ "$SHUTDOWN_AFTER" = true ]; then
   echo "🕒 Auto-shutdown enabled — powering off in 60 seconds..."
   sleep 60 && sudo shutdown -h now
