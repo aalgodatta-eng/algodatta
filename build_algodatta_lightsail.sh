@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================
 #  AlgoDatta Lightsail Build Script (local | prod)
-#  v5.0 — Reuses existing Cognito pool from .env
-#  Idempotent and error-safe
+#  v7.0 — Auto-detect .env + AWS CLI v2 Installer + Idempotent
 # =============================================================
 set -Eeuo pipefail
 
@@ -18,39 +17,67 @@ AWS_INFO_FILE="$BASE_DIR/awsInfo.json"
 TF_FILE="$BASE_DIR/main.tf"
 OUTPUT_FILE="$BASE_DIR/outputs.tf"
 MANIFEST_FILE="$LOG_DIR/env_manifest.json"
-ENV_FILE="$BASE_DIR/.env"
 
 mkdir -p "$BASE_DIR" "$LOG_DIR"
-cd "$BASE_DIR" || exit 1
+cd "$BASE_DIR" 2>/dev/null || mkdir -p "$BASE_DIR" && cd "$BASE_DIR"
 
 echo "[$(date '+%F %T')] 🚀 Starting $APP_NAME setup (ENV=$ENVIRONMENT)"
 
-# --- 1️⃣ Load environment file --------------------------------------------
-if [ ! -f "$ENV_FILE" ]; then
-  echo "❌ Missing .env file in $BASE_DIR"
+# --- 1️⃣ Locate .env automatically ----------------------------------------
+ENV_PATHS=(
+  "$BASE_DIR/.env"
+  "/home/ubuntu/AlgoDatta/.env"
+  "/root/AlgoDatta/.env"
+)
+ENV_FILE=""
+for p in "${ENV_PATHS[@]}"; do
+  if [ -f "$p" ]; then
+    ENV_FILE="$p"
+    break
+  fi
+done
+
+if [ -z "$ENV_FILE" ]; then
+  echo "❌ .env file not found in any known location:"
+  printf ' - %s\n' "${ENV_PATHS[@]}"
   exit 1
 fi
+echo "✅ Found .env file at: $ENV_FILE"
 
-echo "📦 Loading variables from .env..."
+# --- 2️⃣ Load environment variables ---------------------------------------
 export $(grep -v '^#' "$ENV_FILE" | xargs)
+echo "📦 Loaded Cognito + AWS variables"
 
-# --- 2️⃣ Configure AWS CLI -------------------------------------------------
+# --- 3️⃣ Configure AWS CLI -------------------------------------------------
 aws configure set aws_access_key_id "$ACCESS_KEY" --profile "$AWS_PROFILE"
 aws configure set aws_secret_access_key "$SECRET_KEY" --profile "$AWS_PROFILE"
 aws configure set region "$AWS_REGION" --profile "$AWS_PROFILE"
 aws configure set output json --profile "$AWS_PROFILE"
 
-# --- 3️⃣ Install dependencies ---------------------------------------------
+# --- 4️⃣ Install dependencies ---------------------------------------------
 echo "📦 Installing dependencies..."
 sudo apt-get update -y
-sudo apt-get install -y unzip jq curl awscli docker.io docker-compose terraform nginx
+sudo apt-get install -y unzip jq curl docker.io docker-compose terraform nginx
+
+# --- AWS CLI v2 (official ZIP install) ------------------------------------
+if ! command -v aws &>/dev/null; then
+  echo "☁️ Installing AWS CLI v2 from official package..."
+  cd /tmp
+  curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+  unzip -o awscliv2.zip >/dev/null
+  sudo ./aws/install
+  aws --version || echo "⚠️ AWS CLI install check failed"
+else
+  echo "✅ AWS CLI already installed"
+fi
+
 sudo systemctl enable docker && sudo systemctl start docker
 
-# --- 4️⃣ Extract files -----------------------------------------------------
+# --- 5️⃣ Extract files -----------------------------------------------------
 if ls *.zip >/dev/null 2>&1; then unzip -o *.zip -d "$BASE_DIR" >/dev/null; fi
 cp -f *.json *.tf *.png "$BASE_DIR" 2>/dev/null || true
 
-# --- 5️⃣ Use existing Cognito config --------------------------------------
+# --- 6️⃣ Use existing Cognito config --------------------------------------
 POOL_ID="${USER_POOL_ID:-}"
 CLIENT_ID="${OIDC_CLIENT_ID:-}"
 COGNITO_DOMAIN="${COGNITO_DOMAIN:-}"
@@ -59,7 +86,7 @@ FRONTEND_URL="https://www.algodatta.com"
 BACKEND_URL="https://api.algodatta.com"
 
 if [[ -z "$POOL_ID" || -z "$CLIENT_ID" || -z "$COGNITO_DOMAIN" ]]; then
-  echo "❌ Missing Cognito details in .env file — please verify USER_POOL_ID, OIDC_CLIENT_ID, and COGNITO_DOMAIN"
+  echo "❌ Missing Cognito details in .env — verify USER_POOL_ID, OIDC_CLIENT_ID, and COGNITO_DOMAIN"
   exit 1
 fi
 
@@ -70,14 +97,14 @@ echo "✅ Cognito Client: $CLIENT_ID"
 echo "✅ Domain: $COGNITO_DOMAIN"
 echo "🌐 Hosted UI: $LOGIN_URL"
 
-# --- 6️⃣ Create demo users (idempotent) -----------------------------------
+# --- 7️⃣ Create demo users (safe re-run) -----------------------------------
 echo "[$(date '+%F %T')] 👥 Creating demo users..."
 declare -A USERS=( ["admin"]="Admin@123" ["analyst"]="Analyst@123" ["trader"]="Trader@123" )
 for USERNAME in "${!USERS[@]}"; do
   EMAIL="${USERNAME}.aalgodatta@gmail.com"
   PASSWORD="${USERS[$USERNAME]}"
   if aws cognito-idp admin-get-user --user-pool-id "$POOL_ID" --username "$EMAIL" >/dev/null 2>&1; then
-    echo "ℹ️  User exists: $EMAIL"
+    echo "ℹ️  User already exists: $EMAIL"
   else
     aws cognito-idp admin-create-user --user-pool-id "$POOL_ID" \
       --username "$EMAIL" \
@@ -89,13 +116,13 @@ for USERNAME in "${!USERS[@]}"; do
   fi
 done
 
-# --- 7️⃣ Terraform --------------------------------------------------------
+# --- 8️⃣ Terraform --------------------------------------------------------
 echo "[$(date '+%F %T')] 🧱 Running Terraform..."
 sed -i 's/{ minimum_length=8, require_lowercase=true, require_uppercase=false, require_numbers=true, require_symbols=false }/{\n    minimum_length = 8\n    require_lowercase = true\n    require_uppercase = false\n    require_numbers = true\n    require_symbols = false\n}/' "$TF_FILE" || true
 terraform init -input=false >/dev/null
 terraform apply -auto-approve | tee "$LOG_DIR/terraform.log"
 
-# --- 8️⃣ Environment files -----------------------------------------------
+# --- 9️⃣ Environment files ------------------------------------------------
 mkdir -p "$BASE_DIR/frontend" "$BASE_DIR/backend"
 cat > "$BASE_DIR/frontend/.env" <<ENV
 NEXT_PUBLIC_API_BASE=${BACKEND_URL}
@@ -113,12 +140,12 @@ AWS_REGION=${AWS_REGION}
 APP_ENV=${ENVIRONMENT}
 ENV
 
-# --- 9️⃣ Docker ------------------------------------------------------------
+# --- 🔟 Docker ------------------------------------------------------------
 echo "[$(date '+%F %T')] 🐳 Building Docker containers..."
 docker compose -f docker-compose.yml -f docker-compose.override.yml build
 docker compose up -d
 
-# --- 🔟 Nginx --------------------------------------------------------------
+# --- 11️⃣ Nginx ------------------------------------------------------------
 sudo tee /etc/nginx/sites-available/algodatta >/dev/null <<NGINX_CONF
 server {
   listen 80;
@@ -139,12 +166,12 @@ NGINX_CONF
 sudo ln -sf /etc/nginx/sites-available/algodatta /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl restart nginx
 
-# --- 11️⃣ Health Checks ----------------------------------------------------
+# --- 12️⃣ Health Checks ---------------------------------------------------
 sleep 5
 curl -fsSL ${BACKEND_URL}/api/healthz || echo "⚠️ Backend health check failed"
 curl -fsSL ${FRONTEND_URL} || echo "⚠️ Frontend check failed"
 
-# --- 12️⃣ Outputs + Manifest ----------------------------------------------
+# --- 13️⃣ Manifest --------------------------------------------------------
 jq -n \
   --arg env "$ENVIRONMENT" \
   --arg pool "$POOL_ID" \
@@ -169,6 +196,7 @@ jq -n \
     region: $region,
     timestamp: now | todate
   }' > "$MANIFEST_FILE"
+
 chmod 644 "$MANIFEST_FILE"
 
 echo "============================================================="
