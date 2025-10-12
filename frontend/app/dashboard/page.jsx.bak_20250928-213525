@@ -1,0 +1,42 @@
+'use client';
+import Image from "next/image";
+import Link from "next/link";
+
+export default function Dashboard() {
+  const handleLogout = () => {
+    window.location.href = "/api/logout";
+  };
+
+  return (
+    <div style={{ fontFamily: "Arial, sans-serif", background: "#f5f7fa", height: "100vh" }}>
+      {/* Navbar */}
+      <nav style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: "12px 40px", background: "#0c3c60", color: "white" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <Image src="/logo.png" alt="AlgoDatta" width={50} height={50} />
+          <span style={{ fontSize: "20px", fontWeight: "bold" }}>AlgoDatta</span>
+        </div>
+        <div style={{ display: "flex", gap: "20px" }}>
+          <Link href="/dashboard" style={{ color: "white" }}>Dashboard</Link>
+          <Link href="/strategies" style={{ color: "white" }}>Strategies</Link>
+          <Link href="/executions" style={{ color: "white" }}>Executions</Link>
+          <Link href="/reports" style={{ color: "white" }}>Reports</Link>
+        </div>
+        <button onClick={handleLogout} style={{
+          background: "white", color: "#0c3c60", fontWeight: "bold",
+          border: "none", borderRadius: "6px", padding: "8px 16px", cursor: "pointer"
+        }}>Logout</button>
+      </nav>
+
+      {/* Body */}
+      <main style={{ padding: "40px", display: "flex", justifyContent: "space-between" }}>
+        <div>
+          <h2 style={{ marginBottom: "20px" }}>Dashboard</h2>
+          <p>Welcome, admin1!</p>
+          <img src="https://dummyimage.com/400x200/ccc/000&text=Chart+Placeholder" alt="Chart" />
+        </div>
+        <Image src="/logo.png" alt="AlgoDatta" width={200} height={200} />
+      </main>
+    </div>
+  );
+}

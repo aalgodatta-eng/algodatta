@@ -1,0 +1,11 @@
+services:
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    ports: ["8000:8000"]
+    volumes:
+      - ./backend/vol:/app/data
+  frontend:
+    build: ./frontend
+    depends_on: [backend]
+    ports: ["3000:3000"]
