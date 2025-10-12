@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================
 #  AlgoDatta Lightsail Build Script (local | prod)
-#  v7.0 — Auto-detect .env + AWS CLI v2 Installer + Idempotent
+#  v8.0 — Auto-detect .env + Docker CE + AWS CLI v2 + Idempotent
 # =============================================================
 set -Eeuo pipefail
 
@@ -31,16 +31,10 @@ ENV_PATHS=(
 )
 ENV_FILE=""
 for p in "${ENV_PATHS[@]}"; do
-  if [ -f "$p" ]; then
-    ENV_FILE="$p"
-    break
-  fi
+  if [ -f "$p" ]; then ENV_FILE="$p"; break; fi
 done
-
 if [ -z "$ENV_FILE" ]; then
-  echo "❌ .env file not found in any known location:"
-  printf ' - %s\n' "${ENV_PATHS[@]}"
-  exit 1
+  echo "❌ .env file not found in any known location:"; printf ' - %s\n' "${ENV_PATHS[@]}"; exit 1
 fi
 echo "✅ Found .env file at: $ENV_FILE"
 
@@ -57,11 +51,34 @@ aws configure set output json --profile "$AWS_PROFILE"
 # --- 4️⃣ Install dependencies ---------------------------------------------
 echo "📦 Installing dependencies..."
 sudo apt-get update -y
-sudo apt-get install -y unzip jq curl docker.io docker-compose terraform nginx
+sudo apt-get install -y unzip jq curl terraform nginx
+
+# --- Docker CE (fixes containerd conflict) --------------------------------
+if ! command -v docker &>/dev/null; then
+  echo "🐳 Installing Docker CE from official repository..."
+  sudo apt-get remove -y docker docker.io containerd runc || true
+  sudo install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" |
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  sudo apt-get update -y
+  sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+else
+  echo "✅ Docker already installed"
+fi
+
+if ! command -v docker-compose &>/dev/null; then
+  echo "🐙 Installing Docker Compose v2..."
+  sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+    -o /usr/local/bin/docker-compose
+  sudo chmod +x /usr/local/bin/docker-compose
+fi
 
 # --- AWS CLI v2 (official ZIP install) ------------------------------------
 if ! command -v aws &>/dev/null; then
-  echo "☁️ Installing AWS CLI v2 from official package..."
+  echo "☁️ Installing AWS CLI v2..."
   cd /tmp
   curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
   unzip -o awscliv2.zip >/dev/null
@@ -70,7 +87,6 @@ if ! command -v aws &>/dev/null; then
 else
   echo "✅ AWS CLI already installed"
 fi
-
 sudo systemctl enable docker && sudo systemctl start docker
 
 # --- 5️⃣ Extract files -----------------------------------------------------
@@ -86,12 +102,10 @@ FRONTEND_URL="https://www.algodatta.com"
 BACKEND_URL="https://api.algodatta.com"
 
 if [[ -z "$POOL_ID" || -z "$CLIENT_ID" || -z "$COGNITO_DOMAIN" ]]; then
-  echo "❌ Missing Cognito details in .env — verify USER_POOL_ID, OIDC_CLIENT_ID, and COGNITO_DOMAIN"
-  exit 1
+  echo "❌ Missing Cognito details in .env — verify USER_POOL_ID, OIDC_CLIENT_ID, and COGNITO_DOMAIN"; exit 1
 fi
 
 LOGIN_URL="${COGNITO_DOMAIN}/login?client_id=${CLIENT_ID}&response_type=code&scope=email+openid+profile&redirect_uri=${OIDC_REDIRECT_URI}"
-
 echo "✅ Using Cognito Pool: $POOL_ID"
 echo "✅ Cognito Client: $CLIENT_ID"
 echo "✅ Domain: $COGNITO_DOMAIN"
@@ -104,7 +118,7 @@ for USERNAME in "${!USERS[@]}"; do
   EMAIL="${USERNAME}.aalgodatta@gmail.com"
   PASSWORD="${USERS[$USERNAME]}"
   if aws cognito-idp admin-get-user --user-pool-id "$POOL_ID" --username "$EMAIL" >/dev/null 2>&1; then
-    echo "ℹ️  User already exists: $EMAIL"
+    echo "ℹ️ User already exists: $EMAIL"
   else
     aws cognito-idp admin-create-user --user-pool-id "$POOL_ID" \
       --username "$EMAIL" \
@@ -150,7 +164,6 @@ sudo tee /etc/nginx/sites-available/algodatta >/dev/null <<NGINX_CONF
 server {
   listen 80;
   server_name www.algodatta.com algodatta.com;
-
   location / {
     proxy_pass http://127.0.0.1:3000;
     proxy_set_header Host \$host;
@@ -166,7 +179,7 @@ NGINX_CONF
 sudo ln -sf /etc/nginx/sites-available/algodatta /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl restart nginx
 
-# --- 12️⃣ Health Checks ---------------------------------------------------
+# --- 12️⃣ Health Checks ----------------------------------------------------
 sleep 5
 curl -fsSL ${BACKEND_URL}/api/healthz || echo "⚠️ Backend health check failed"
 curl -fsSL ${FRONTEND_URL} || echo "⚠️ Frontend check failed"
@@ -198,7 +211,6 @@ jq -n \
   }' > "$MANIFEST_FILE"
 
 chmod 644 "$MANIFEST_FILE"
-
 echo "============================================================="
 echo "✅ Deployment complete!"
 echo "Frontend → ${FRONTEND_URL}"
