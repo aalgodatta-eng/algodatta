@@ -12,6 +12,9 @@ out/
 .env.development.local
 .env.production.local
 .env.test.local
+*.so
+dist/
+build/
 
 # ---- Python / FastAPI ----------------------------------------------------
 __pycache__/
